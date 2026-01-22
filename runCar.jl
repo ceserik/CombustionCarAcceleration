@@ -75,7 +75,7 @@ for i in 1:N
 end
 
 # Calculate motor RPM for each time step
-r_m = car.rear_wheel_radius / 1000  # Convert mm to meters
+r_m = car.rear_wheel_radius
 motor_rpm = zeros(N+1)
 motor_torque = zeros(N+1)
 for i in 1:(N+1)
