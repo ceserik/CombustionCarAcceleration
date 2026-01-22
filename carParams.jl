@@ -20,6 +20,9 @@ Base.@kwdef struct Car
     # Gearbox ratios
     gearbox_ratios::Vector{Float64}
     differential_ratio::Float64
+
+    #Motor
+    torqueMax::Float64
 end
 
 # Create car instance with default parameters
@@ -30,8 +33,9 @@ car = Car(
     weight_fr = 353,
     weight_rl = 358,
     weight_rr = 357,
-    front_wheel_radius = 317.85,
-    rear_wheel_radius = 321.35,
+    front_wheel_radius = 317.85/1000,
+    rear_wheel_radius = 321.35/1000,
     gearbox_ratios = [4.23, 2.52, 1.66, 1.22, 1],
-    differential_ratio = 3.15
+    differential_ratio = 3.15,
+    torqueMax = 500
 )
