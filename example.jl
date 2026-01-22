@@ -51,7 +51,7 @@ for i in 1:N                                        # i corresponds to time step
 end
 @constraint(rhocp, [t; (x-x_ref)] in MOI.NormOneCone(1 + length(x)))
 @objective(rhocp, Min, t)
-#@objective(rhocp, Min, sum((x[i]-x_ref[i])^2 for i in 1:N+1))
+@objective(rhocp, Min, sum((x[i]-x_ref[i])^2 for i in 1:N+1))
 
 function mpc_tracking(rhocp, xₖ, x_ref_full, k, N)          # Function that solves the RH OCP 
     set_parameter_value(x_cur,xₖ)                           #   for the current state x_cur = x(k),

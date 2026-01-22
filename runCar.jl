@@ -5,12 +5,9 @@ import ParametricOptInterface as POI
 include("carParams.jl")
 
 
-time_step = 0.5
-N = 15
+time_step = 0.1
+N = 30
 
-## system Definition
-#v̇ = (car.torqueMax *Ratio*R_d *r) -v/(r * gearbox_ratio * R_d * 3)
-#ṡ = v
 
 rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
 
@@ -19,14 +16,11 @@ rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
 @variable(rhocp, third_gear[1:N], Bin)
 @variable(rhocp, fourth_gear[1:N], Bin)
 @variable(rhocp, fifth_gear[1:N], Bin)
-@variable(rhocp, over_rev[1:N], Bin)
-@variable(rhocp, first_and_over_rev[1:N], Bin)  # Helper variable for first_gear AND over_rev
-@variable(rhocp, second_and_over_rev[1:N], Bin)  # Helper variable for first_gear AND over_rev
-@variable(rhocp, third_and_over_rev[1:N], Bin)  # Helper variable for first_gear AND over_rev
-@variable(rhocp, 0 <= v[1:N+1] <= 1000)  # velocity in m/s, bounded [0, 100]
-@variable(rhocp, -10 <= z[1:N] <= 10)   # velocity change in m/s per time step
-@variable(rhocp, -500 <= over_torque[1:N] <= 500)   # overrev negative torque
+
+@variable(rhocp, 0 <= v[1:N+1] <= 100)  # velocity in m/s, bounded [0, 100]
+@variable(rhocp, 0 <= z[1:N] <= 15)   # velocity change in m/s per time step
 @variable(rhocp, v_cur in MOI.Parameter(0))  
+@variable(rhocp,0 <= u[1:N] <= 500)
 @constraint(rhocp, v[1] == v_cur)    
 
 
@@ -36,38 +30,54 @@ r = car.rear_wheel_radius
 R_gb = car.gearbox_ratios
 
 for i in 1:N                                        # i corresponds to time step k+i-1
+    # XOR to force exactly one gear ratio to be active at all times
+    @constraint(rhocp, first_gear[i] +second_gear[i] + third_gear[i] + fourth_gear[i] + fifth_gear[i]== 1)
     
-    # Enforce: first_and_over_rev[i] = first_gear[i] AND over_rev[i]
-    @constraint(rhocp, first_and_over_rev[i] <= first_gear[i])
-    @constraint(rhocp, first_and_over_rev[i] <= over_rev[i])
-    @constraint(rhocp, first_and_over_rev[i] >= first_gear[i] + over_rev[i] - 1)
-
-    @constraint(rhocp, second_and_over_rev[i] <= second_gear[i])
-    @constraint(rhocp, second_and_over_rev[i] <= over_rev[i])
-    @constraint(rhocp, second_and_over_rev[i] >= second_gear[i] + over_rev[i] - 1)
-
-    @constraint(rhocp, third_and_over_rev[i] <= third_gear[i])
-    @constraint(rhocp, third_and_over_rev[i] <= over_rev[i])
-    @constraint(rhocp, third_and_over_rev[i] >= third_gear[i] + over_rev[i] - 1)
+    #traction force from motor to wheels
+    @constraint(rhocp, first_gear[i]  -->  {z[i] == (u[i] * R_gb[1] *R_d)/(m * r) * time_step})
+    @constraint(rhocp, second_gear[i] -->  {z[i] == (u[i] * R_gb[2] *R_d)/(m * r) * time_step})
+    @constraint(rhocp, third_gear[i]  -->  {z[i] == (u[i] * R_gb[3] *R_d)/(m * r) * time_step})
+    @constraint(rhocp, fourth_gear[i] -->  {z[i] == (u[i] * R_gb[4] *R_d)/(m * r) * time_step})
+    @constraint(rhocp, fifth_gear[i]  -->  {z[i] == (u[i] * R_gb[5] *R_d)/(m * r) * time_step})
 
 
-    @constraint(rhocp, first_and_over_rev[i] --> {z[i] == 4})
+    # The torque has to fall when motor is over revved, that is from 4500 rpm to 6000rpm
+    #@constraint(rhocp, first_gear[i]  -->  {u[i] <= car.torqueMax + 3*(470-v[i] * R_d * R_gb[1] /r )})
+    #@constraint(rhocp, second_gear[i] -->  {u[i] <= car.torqueMax + 3*(470-v[i] * R_d * R_gb[2] /r )})
+    #@constraint(rhocp, third_gear[i]  -->  {u[i] <= car.torqueMax + 3*(470-v[i] * R_d * R_gb[3] /r )})
+    #@constraint(rhocp, fourth_gear[i] -->  {u[i] <= car.torqueMax + 3*(470-v[i] * R_d * R_gb[4] /r )})
+    #@constraint(rhocp, fifth_gear[i]  -->  {u[i] <= car.torqueMax + 3*(470-v[i] * R_d * R_gb[5] /r )})
+
+
+    #ramp up of torque
+    @constraint(rhocp, first_gear[i]  -->  {u[i] <= 52/235 * v[i] * R_d * R_gb[1] / r + 400})
+    @constraint(rhocp, second_gear[i] -->  {u[i] <= 52/235 * v[i] * R_d * R_gb[2] / r + 400})
+    @constraint(rhocp, third_gear[i]  -->  {u[i] <= 52/235 * v[i] * R_d * R_gb[3] / r + 400})
+    @constraint(rhocp, fourth_gear[i] -->  {u[i] <= 52/235 * v[i] * R_d * R_gb[4] / r + 400})
+    @constraint(rhocp, fifth_gear[i]  -->  {u[i] <= 52/235 * v[i] * R_d * R_gb[5] / r + 400})
+
+
+    #peak torque to over rev transition
+    @constraint(rhocp, first_gear[i]  -->  {u[i] <= 500 - 0.5458 * (v[i] * R_d * R_gb[1] / r - 471.2389)})
+    @constraint(rhocp, second_gear[i] -->  {u[i] <= 500 - 0.5458 * (v[i] * R_d * R_gb[2] / r - 471.2389)})
+    @constraint(rhocp, third_gear[i]  -->  {u[i] <= 500 - 0.5458 * (v[i] * R_d * R_gb[3] / r - 471.2389)})
+    @constraint(rhocp, fourth_gear[i] -->  {u[i] <= 500 - 0.5458 * (v[i] * R_d * R_gb[4] / r - 471.2389)})
+    @constraint(rhocp, fifth_gear[i]  -->  {u[i] <= 500 - 0.5458 * (v[i] * R_d * R_gb[5] / r - 471.2389)})
+
+    #over rev
+    @constraint(rhocp, first_gear[i]  -->  {u[i] <= 420 - 26.7324 * (v[i] * R_d * R_gb[1] / r - 617.7605)})
+    @constraint(rhocp, second_gear[i] -->  {u[i] <= 420 - 26.7324 * (v[i] * R_d * R_gb[2] / r - 617.7605)})
+    @constraint(rhocp, third_gear[i]  -->  {u[i] <= 420 - 26.7324 * (v[i] * R_d * R_gb[3] / r - 617.7605)})
+    @constraint(rhocp, fourth_gear[i] -->  {u[i] <= 420 - 26.7324 * (v[i] * R_d * R_gb[4] / r - 617.7605)})
+    @constraint(rhocp, fifth_gear[i]  -->  {u[i] <= 420 - 26.7324 * (v[i] * R_d * R_gb[5] / r - 617.7605)})
     
-    @constraint(rhocp, first_gear[i] +second_gear[i] + third_gear[i] == 1)
-    
-    
-    @constraint(rhocp, first_gear[i] -->  {z[i] == (car.torqueMax + 3*(470-v[i] * R_d * R_gb[1] )/r ) * R_gb[1] *R_d * r /m * time_step})
-    @constraint(rhocp, second_gear[i] --> {z[i] == (car.torqueMax + 3*(470-v[i] * R_d * R_gb[2] )/r) * R_gb[2] *R_d * r /m * time_step})
-    @constraint(rhocp, third_gear[i] -->  {z[i] == (car.torqueMax + 3*(470-v[i] * R_d * R_gb[3] )/r) * R_gb[3] *R_d * r /m * time_step})
 
-    @constraint(rhocp, third_gear[i] -->  {over_torque[i] == (car.torqueMax + 3*(470-v[i] * R_d * R_gb[3] )/r) * R_gb[3] *R_d * r /m * time_step})
-    
-    #@constraint(rhocp, fourth_gear[i] --> {z[i] == (car.torqueMax + 3*(470-v[i] * R_d * R_gb[4] )/r) * R_gb[4] *R_d * r /m * time_step})
-   # @constraint(rhocp,first_and_over_rev[i] -->{over_torque[i] == 3*(470-v[i] * R_d * R_gb[1] )/r} )
-   # @constraint(rhocp,second_and_over_rev[i] -->{over_torque[i] == 3*(470-v[i] * R_d * R_gb[2] )/r} )
-   # @constraint(rhocp,third_and_over_rev[i] -->{over_torque[i] == 3*(470-v[i] * R_d * R_gb[3] )/r} )
 
-    @constraint(rhocp, v[i+1] == v[i] + z[i])
+
+    
+    
+
+    @constraint(rhocp, v[i+1] == v[i] + z[i]  )
 end
 
 # Objective: maximize final velocity
@@ -84,7 +94,9 @@ time_steps = time_step:time_step:(N*time_step)
 gear_1 = value.(first_gear)
 gear_2 = value.(second_gear)
 gear_3 = value.(third_gear)
-# gear_4 = value.(fourth_gear)
+gear_4 = value.(fourth_gear)
+gear_5 = value.(fifth_gear)
+u_vals = value.(u)
 
 # Determine active gear at each time step
 active_gear = zeros(Int, N)
@@ -95,8 +107,10 @@ for i in 1:N
         active_gear[i] = 2
     elseif gear_3[i] > 0.5
         active_gear[i] = 3
-    # elseif gear_4[i] > 0.5
-    #     active_gear[i] = 4
+    elseif gear_4[i] > 0.5
+         active_gear[i] = 4
+    elseif gear_5[i] > 0.5
+         active_gear[i] = 5
     end
 end
 
@@ -112,8 +126,6 @@ for i in 1:(N+1)
     end
     # Motor RPM = (v / r) * differential_ratio * gearbox_ratio * (60 / 2π)
     motor_rpm[i] = (velocity[i] / r_m) * R_d * R_gb[gear_idx] * (60 / (2 * π))
-    # Motor torque calculation from the constraint equation
-    motor_torque[i] = car.torqueMax + 3*(470 - velocity[i] * R_d * R_gb[gear_idx] * r)
 end
 
 # Plot
@@ -135,7 +147,15 @@ p2 = plot(time_steps, active_gear,
      legend=false,
      yticks=1:5)
 
-p3 = plot(time_pts, motor_rpm,
+p3 = plot(time_steps, u_vals,
+     xlabel="Time (s)",
+     ylabel="Control Input u (Nm)",
+     title="Control Input vs Time",
+     linewidth=2,
+     marker=:circle,
+     legend=false)
+
+p4 = plot(time_pts, motor_rpm,
      xlabel="Time (s)",
      ylabel="Motor RPM",
      title="Motor Speed vs Time",
@@ -143,12 +163,5 @@ p3 = plot(time_pts, motor_rpm,
      marker=:circle,
      legend=false)
 
-p4 = plot(time_pts, motor_torque,
-     xlabel="Time (s)",
-     ylabel="Motor Torque (Nm)",
-     title="Motor Torque vs Time",
-     linewidth=2,
-     marker=:circle,
-     legend=false)
 
 plot(p1, p2, p3, p4, layout=(4,1), size=(800, 1200))

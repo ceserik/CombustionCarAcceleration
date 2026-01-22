@@ -23,6 +23,10 @@ Base.@kwdef struct Car
 
     #Motor
     torqueMax::Float64
+    
+    # Aerodynamics
+    drag_coefficient::Float64  # Cd
+    frontal_area::Float64      # A [m²]
 end
 
 # Create car instance with default parameters
@@ -37,5 +41,7 @@ car = Car(
     rear_wheel_radius = 321.35/1000,
     gearbox_ratios = [4.23, 2.52, 1.66, 1.22, 1],
     differential_ratio = 3.15,
-    torqueMax = 500
+    torqueMax = 500,
+    drag_coefficient = 0.3,    # Typical for sports cars
+    frontal_area = 2.0         # m² - typical for a car
 )
