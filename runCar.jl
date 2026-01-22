@@ -5,8 +5,8 @@ import ParametricOptInterface as POI
 include("carParams.jl")
 
 
-time_step = 0.1
-N = 30
+time_step = 0.2
+N = 50
 
 
 rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
@@ -17,10 +17,10 @@ rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
 @variable(rhocp, fourth_gear[1:N], Bin)
 @variable(rhocp, fifth_gear[1:N], Bin)
 
-@variable(rhocp, 0 <= v[1:N+1] <= 100)  # velocity in m/s, bounded [0, 100]
-@variable(rhocp, 0 <= z[1:N] <= 15)   # velocity change in m/s per time step
+@variable(rhocp, 0 <= v[1:N+1] <= 60)  # velocity in m/s, bounded [0, 100] 
+@variable(rhocp, 0 <= z[1:N] <= 3)   
 @variable(rhocp, v_cur in MOI.Parameter(0))  
-@variable(rhocp,0 <= u[1:N] <= 500)
+@variable(rhocp,-2 <= u[1:N] <= 500)
 @constraint(rhocp, v[1] == v_cur)    
 
 
@@ -31,7 +31,8 @@ R_gb = car.gearbox_ratios
 
 for i in 1:N                                        # i corresponds to time step k+i-1
     # XOR to force exactly one gear ratio to be active at all times
-    @constraint(rhocp, first_gear[i] +second_gear[i] + third_gear[i] + fourth_gear[i] + fifth_gear[i]== 1)
+    @constraint(rhocp, first_gear[i] + second_gear[i] + third_gear[i] + fourth_gear[i] + fifth_gear[i] == 1)
+    #@constraint(rhocp, ==0)
     
     #traction force from motor to wheels
     @constraint(rhocp, first_gear[i]  -->  {z[i] == (u[i] * R_gb[1] *R_d)/(m * r) * time_step})
@@ -39,15 +40,6 @@ for i in 1:N                                        # i corresponds to time step
     @constraint(rhocp, third_gear[i]  -->  {z[i] == (u[i] * R_gb[3] *R_d)/(m * r) * time_step})
     @constraint(rhocp, fourth_gear[i] -->  {z[i] == (u[i] * R_gb[4] *R_d)/(m * r) * time_step})
     @constraint(rhocp, fifth_gear[i]  -->  {z[i] == (u[i] * R_gb[5] *R_d)/(m * r) * time_step})
-
-
-    # The torque has to fall when motor is over revved, that is from 4500 rpm to 6000rpm
-    #@constraint(rhocp, first_gear[i]  -->  {u[i] <= car.torqueMax + 3*(470-v[i] * R_d * R_gb[1] /r )})
-    #@constraint(rhocp, second_gear[i] -->  {u[i] <= car.torqueMax + 3*(470-v[i] * R_d * R_gb[2] /r )})
-    #@constraint(rhocp, third_gear[i]  -->  {u[i] <= car.torqueMax + 3*(470-v[i] * R_d * R_gb[3] /r )})
-    #@constraint(rhocp, fourth_gear[i] -->  {u[i] <= car.torqueMax + 3*(470-v[i] * R_d * R_gb[4] /r )})
-    #@constraint(rhocp, fifth_gear[i]  -->  {u[i] <= car.torqueMax + 3*(470-v[i] * R_d * R_gb[5] /r )})
-
 
     #ramp up of torque
     @constraint(rhocp, first_gear[i]  -->  {u[i] <= 52/235 * v[i] * R_d * R_gb[1] / r + 400})
@@ -65,18 +57,12 @@ for i in 1:N                                        # i corresponds to time step
     @constraint(rhocp, fifth_gear[i]  -->  {u[i] <= 500 - 0.5458 * (v[i] * R_d * R_gb[5] / r - 471.2389)})
 
     #over rev
-    @constraint(rhocp, first_gear[i]  -->  {u[i] <= 420 - 26.7324 * (v[i] * R_d * R_gb[1] / r - 617.7605)})
-    @constraint(rhocp, second_gear[i] -->  {u[i] <= 420 - 26.7324 * (v[i] * R_d * R_gb[2] / r - 617.7605)})
-    @constraint(rhocp, third_gear[i]  -->  {u[i] <= 420 - 26.7324 * (v[i] * R_d * R_gb[3] / r - 617.7605)})
-    @constraint(rhocp, fourth_gear[i] -->  {u[i] <= 420 - 26.7324 * (v[i] * R_d * R_gb[4] / r - 617.7605)})
-    @constraint(rhocp, fifth_gear[i]  -->  {u[i] <= 420 - 26.7324 * (v[i] * R_d * R_gb[5] / r - 617.7605)})
+    @constraint(rhocp, first_gear[i]  -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[1] / r - 617.7605))/500})
+    @constraint(rhocp, second_gear[i] -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[2] / r - 617.7605))/500})
+    @constraint(rhocp, third_gear[i]  -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[3] / r - 617.7605))/500})
+    @constraint(rhocp, fourth_gear[i] -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[4] / r - 617.7605))/500})
+    @constraint(rhocp, fifth_gear[i]  -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[5] / r - 617.7605))/500})
     
-
-
-
-    
-    
-
     @constraint(rhocp, v[i+1] == v[i] + z[i]  )
 end
 
@@ -116,14 +102,9 @@ end
 
 # Calculate motor RPM for each time step
 r_m = car.rear_wheel_radius
-motor_rpm = zeros(N+1)
-motor_torque = zeros(N+1)
-for i in 1:(N+1)
-    if i == 1
-        gear_idx = 1  # Initial gear
-    else
-        gear_idx = active_gear[i-1]
-    end
+motor_rpm = zeros(N)
+for i in 1:N
+    gear_idx = active_gear[i]
     # Motor RPM = (v / r) * differential_ratio * gearbox_ratio * (60 / 2π)
     motor_rpm[i] = (velocity[i] / r_m) * R_d * R_gb[gear_idx] * (60 / (2 * π))
 end
@@ -155,13 +136,13 @@ p3 = plot(time_steps, u_vals,
      marker=:circle,
      legend=false)
 
-p4 = plot(time_pts, motor_rpm,
-     xlabel="Time (s)",
-     ylabel="Motor RPM",
-     title="Motor Speed vs Time",
-     linewidth=2,
+p4 = scatter(motor_rpm, u_vals,
+     xlabel="Motor RPM",
+     ylabel="Torque (Nm)",
+     title="Torque vs RPM",
      marker=:circle,
-     legend=false)
+     legend=false,
+     markersize=4)
 
 
 plot(p1, p2, p3, p4, layout=(4,1), size=(800, 1200))
