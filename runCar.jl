@@ -20,8 +20,12 @@ rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
 @variable(rhocp, fourth_gear[1:N], Bin)
 @variable(rhocp, fifth_gear[1:N], Bin)
 @variable(rhocp, over_rev[1:N], Bin)
+@variable(rhocp, first_and_over_rev[1:N], Bin)  # Helper variable for first_gear AND over_rev
+@variable(rhocp, second_and_over_rev[1:N], Bin)  # Helper variable for first_gear AND over_rev
+@variable(rhocp, third_and_over_rev[1:N], Bin)  # Helper variable for first_gear AND over_rev
 @variable(rhocp, 0 <= v[1:N+1] <= 1000)  # velocity in m/s, bounded [0, 100]
 @variable(rhocp, -10 <= z[1:N] <= 10)   # velocity change in m/s per time step
+@variable(rhocp, -500 <= over_torque[1:N] <= 500)   # overrev negative torque
 @variable(rhocp, v_cur in MOI.Parameter(0))  
 @constraint(rhocp, v[1] == v_cur)    
 
@@ -33,14 +37,36 @@ R_gb = car.gearbox_ratios
 
 for i in 1:N                                        # i corresponds to time step k+i-1
     
+    # Enforce: first_and_over_rev[i] = first_gear[i] AND over_rev[i]
+    @constraint(rhocp, first_and_over_rev[i] <= first_gear[i])
+    @constraint(rhocp, first_and_over_rev[i] <= over_rev[i])
+    @constraint(rhocp, first_and_over_rev[i] >= first_gear[i] + over_rev[i] - 1)
+
+    @constraint(rhocp, second_and_over_rev[i] <= second_gear[i])
+    @constraint(rhocp, second_and_over_rev[i] <= over_rev[i])
+    @constraint(rhocp, second_and_over_rev[i] >= second_gear[i] + over_rev[i] - 1)
+
+    @constraint(rhocp, third_and_over_rev[i] <= third_gear[i])
+    @constraint(rhocp, third_and_over_rev[i] <= over_rev[i])
+    @constraint(rhocp, third_and_over_rev[i] >= third_gear[i] + over_rev[i] - 1)
+
+
+    @constraint(rhocp, first_and_over_rev[i] --> {z[i] == 4})
+    
     @constraint(rhocp, first_gear[i] +second_gear[i] + third_gear[i] == 1)
     
     
-    @constraint(rhocp, first_gear[i] -->  {z[i] == (car.torqueMax + 3*(470-v[i] * R_d * R_gb[1] )/r) * R_gb[1] *R_d * r /m * time_step})
+    @constraint(rhocp, first_gear[i] -->  {z[i] == (car.torqueMax + 3*(470-v[i] * R_d * R_gb[1] )/r ) * R_gb[1] *R_d * r /m * time_step})
     @constraint(rhocp, second_gear[i] --> {z[i] == (car.torqueMax + 3*(470-v[i] * R_d * R_gb[2] )/r) * R_gb[2] *R_d * r /m * time_step})
     @constraint(rhocp, third_gear[i] -->  {z[i] == (car.torqueMax + 3*(470-v[i] * R_d * R_gb[3] )/r) * R_gb[3] *R_d * r /m * time_step})
-    #@constraint(rhocp, fourth_gear[i] --> {z[i] == (car.torqueMax + 3*(470-v[i] * R_d * R_gb[4] )/r) * R_gb[4] *R_d * r /m * time_step})
+
+    @constraint(rhocp, third_gear[i] -->  {over_torque[i] == (car.torqueMax + 3*(470-v[i] * R_d * R_gb[3] )/r) * R_gb[3] *R_d * r /m * time_step})
     
+    #@constraint(rhocp, fourth_gear[i] --> {z[i] == (car.torqueMax + 3*(470-v[i] * R_d * R_gb[4] )/r) * R_gb[4] *R_d * r /m * time_step})
+   # @constraint(rhocp,first_and_over_rev[i] -->{over_torque[i] == 3*(470-v[i] * R_d * R_gb[1] )/r} )
+   # @constraint(rhocp,second_and_over_rev[i] -->{over_torque[i] == 3*(470-v[i] * R_d * R_gb[2] )/r} )
+   # @constraint(rhocp,third_and_over_rev[i] -->{over_torque[i] == 3*(470-v[i] * R_d * R_gb[3] )/r} )
+
     @constraint(rhocp, v[i+1] == v[i] + z[i])
 end
 
@@ -87,7 +113,7 @@ for i in 1:(N+1)
     # Motor RPM = (v / r) * differential_ratio * gearbox_ratio * (60 / 2π)
     motor_rpm[i] = (velocity[i] / r_m) * R_d * R_gb[gear_idx] * (60 / (2 * π))
     # Motor torque calculation from the constraint equation
-    motor_torque[i] = car.torqueMax + 3*(470 - velocity[i] * R_d * R_gb[gear_idx] / r)
+    motor_torque[i] = car.torqueMax + 3*(470 - velocity[i] * R_d * R_gb[gear_idx] * r)
 end
 
 # Plot
