@@ -4,10 +4,11 @@ using HiGHS
 import ParametricOptInterface as POI
 include("carParams.jl")
 
-
+max_accel = 20 #m/s^2
 time_step = 0.1
-N = 30
-curve_start_distance = 30
+N = 50
+curve_start_distance = 70
+curve_end_distance = 80  # Curve ends 10 meters after it starts
 
 
 rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
@@ -21,7 +22,7 @@ rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
 
 @variable(rhocp, 0 <= v[1:N+1] <= 60)  # velocity in m/s, bounded [0, 100] 
 @variable(rhocp, 0 <= distance[1:N+1] <= 150)  # cumulative distance in m
-@variable(rhocp, -3 <= a[1:N] <= 3)   
+@variable(rhocp, -max_accel * time_step <= a[1:N] <= max_accel * time_step)   
 @variable(rhocp, v_cur in MOI.Parameter(0))  
 @variable(rhocp,0 <= u[1:N] <= 520)
 @constraint(rhocp, v[1] == v_cur)    
@@ -76,7 +77,7 @@ for i in 1:N                                        # i corresponds to time step
     # If distance exceeds curve_start_distance, enforce max velocity of 20
     # Force curve[i] = 1 when distance >= curve_start_distance
     @constraint(rhocp, !curve[i] --> {distance[i] <= curve_start_distance - 0.01})
-    @constraint(rhocp, curve[i] --> {v[i+1] <= 20})
+    @constraint(rhocp, curve[i] --> {v[i+1] <= 10})
     
     @constraint(rhocp, v[i+1] == v[i] + a[i]  )
 end
