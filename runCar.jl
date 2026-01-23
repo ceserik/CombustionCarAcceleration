@@ -5,8 +5,8 @@ import ParametricOptInterface as POI
 include("carParams.jl")
 
 
-time_step = 0.2
-N = 50
+time_step = 0.1
+N = 80
 
 
 rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
@@ -136,7 +136,15 @@ p3 = plot(time_steps, u_vals,
      marker=:circle,
      legend=false)
 
-p4 = scatter(motor_rpm, u_vals,
+p4 = plot(time_steps, motor_rpm,
+     xlabel="Time (s)",
+     ylabel="Motor RPM",
+     title="Motor RPM vs Time",
+     linewidth=2,
+     marker=:circle,
+     legend=false)
+
+p5 = scatter(motor_rpm, u_vals,
      xlabel="Motor RPM",
      ylabel="Torque (Nm)",
      title="Torque vs RPM",
@@ -145,4 +153,4 @@ p4 = scatter(motor_rpm, u_vals,
      markersize=4)
 
 
-plot(p1, p2, p3, p4, layout=(4,1), size=(800, 1200))
+plot(p1, p2, p3, p4, p5, layout=(5,1), size=(800, 1500))

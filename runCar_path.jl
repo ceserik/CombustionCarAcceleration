@@ -5,8 +5,8 @@ import ParametricOptInterface as POI
 include("carParams.jl")
 
 
-time_step = 0.05
-N = 60
+time_step = 0.1
+N = 30
 curve_start_distance = 30
 
 
