@@ -8,7 +8,7 @@ max_accel = 20 #m/s^2
 time_step = 0.1
 N = 50
 curve_start_distance = 70
-curve_end_distance = 80  # Curve ends 10 meters after it starts
+curve_end_distance = 75  # Curve ends 10 meters after it starts
 
 
 rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
@@ -18,7 +18,10 @@ rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
 @variable(rhocp, third_gear[1:N], Bin)
 @variable(rhocp, fourth_gear[1:N], Bin)
 @variable(rhocp, fifth_gear[1:N], Bin)
-@variable(rhocp, curve[1:N],Bin)
+@variable(rhocp, before_curve[1:N], Bin)
+@variable(rhocp, in_curve[1:N], Bin)
+@variable(rhocp, after_curve[1:N], Bin)
+
 
 @variable(rhocp, 0 <= v[1:N+1] <= 60)  # velocity in m/s, bounded [0, 100] 
 @variable(rhocp, 0 <= distance[1:N+1] <= 150)  # cumulative distance in m
@@ -71,13 +74,18 @@ for i in 1:N                                        # i corresponds to time step
     @constraint(rhocp, fourth_gear[i] -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[4] / r - 617.7605))/500})
     @constraint(rhocp, fifth_gear[i]  -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[5] / r - 617.7605))/500})
     
-    # Update cumulative distance: distance[i+1] = distance[i] + v[i] * time_step
     @constraint(rhocp, distance[i+1] == distance[i] + v[i] * time_step)
     
-    # If distance exceeds curve_start_distance, enforce max velocity of 20
-    # Force curve[i] = 1 when distance >= curve_start_distance
-    @constraint(rhocp, !curve[i] --> {distance[i] <= curve_start_distance - 0.01})
-    @constraint(rhocp, curve[i] --> {v[i+1] <= 10})
+
+    @constraint(rhocp, before_curve[i] + in_curve[i] + after_curve[i] == 1)
+    
+
+    @constraint(rhocp, before_curve[i] --> {distance[i] <= curve_start_distance})
+    @constraint(rhocp, in_curve[i] --> {distance[i] >= curve_start_distance})
+    @constraint(rhocp, in_curve[i] --> {distance[i] <= curve_end_distance})
+    @constraint(rhocp, after_curve[i] --> {distance[i] >= curve_end_distance})
+    
+    @constraint(rhocp, in_curve[i] --> {v[i+1] <= 10})
     
     @constraint(rhocp, v[i+1] == v[i] + a[i]  )
 end
