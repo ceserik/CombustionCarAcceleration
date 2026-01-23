@@ -1,0 +1,187 @@
+
+using JuMP
+using HiGHS
+import ParametricOptInterface as POI
+include("carParams.jl")
+
+
+time_step = 0.05
+N = 60
+curve_start_distance = 30
+
+
+rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
+@variable(rhocp, neutral_gear[1:N], Bin)                       
+@variable(rhocp, first_gear[1:N], Bin)                       
+@variable(rhocp, second_gear[1:N], Bin)
+@variable(rhocp, third_gear[1:N], Bin)
+@variable(rhocp, fourth_gear[1:N], Bin)
+@variable(rhocp, fifth_gear[1:N], Bin)
+@variable(rhocp, curve[1:N],Bin)
+
+@variable(rhocp, 0 <= v[1:N+1] <= 60)  # velocity in m/s, bounded [0, 100] 
+@variable(rhocp, 0 <= distance[1:N+1] <= 150)  # cumulative distance in m
+@variable(rhocp, -3 <= a[1:N] <= 3)   
+@variable(rhocp, v_cur in MOI.Parameter(0))  
+@variable(rhocp,0 <= u[1:N] <= 520)
+@constraint(rhocp, v[1] == v_cur)    
+@constraint(rhocp, distance[1] == 0)  # start at zero distance
+
+
+m = car.weight_p
+R_d = car.differential_ratio
+r = car.rear_wheel_radius
+R_gb = car.gearbox_ratios
+motor_drag = 20;
+
+for i in 1:N                                        # i corresponds to time step k+i-1
+    # XOR to force exactly one gear ratio to be active at all times
+    @constraint(rhocp, first_gear[i] + second_gear[i] + third_gear[i] + fourth_gear[i] + fifth_gear[i] + neutral_gear[i] == 1)
+    #@constraint(rhocp, ==0)
+    
+    #traction force from motor to wheels
+    @constraint(rhocp, neutral_gear[i]  -->  {u[i] == 0})
+    @constraint(rhocp, neutral_gear[i]  -->  {a[i] <= 0})
+    @constraint(rhocp, first_gear[i]  -->  {a[i] == ((u[i] ) * R_gb[1] *R_d)/(m * r) * time_step})
+    @constraint(rhocp, second_gear[i] -->  {a[i] == ((u[i] ) * R_gb[2] *R_d)/(m * r) * time_step})
+    @constraint(rhocp, third_gear[i]  -->  {a[i] == ((u[i] ) * R_gb[3] *R_d)/(m * r) * time_step})
+    @constraint(rhocp, fourth_gear[i] -->  {a[i] == ((u[i] ) * R_gb[4] *R_d)/(m * r) * time_step})
+    @constraint(rhocp, fifth_gear[i]  -->  {a[i] == ((u[i] ) * R_gb[5] *R_d)/(m * r) * time_step})
+
+    #ramp up of torque
+    @constraint(rhocp, first_gear[i]  -->  {u[i] <= 52/235 * v[i] * R_d * R_gb[1] / r + 400})
+    @constraint(rhocp, second_gear[i] -->  {u[i] <= 52/235 * v[i] * R_d * R_gb[2] / r + 400})
+    @constraint(rhocp, third_gear[i]  -->  {u[i] <= 52/235 * v[i] * R_d * R_gb[3] / r + 400})
+    @constraint(rhocp, fourth_gear[i] -->  {u[i] <= 52/235 * v[i] * R_d * R_gb[4] / r + 400})
+    @constraint(rhocp, fifth_gear[i]  -->  {u[i] <= 52/235 * v[i] * R_d * R_gb[5] / r + 400})
+
+
+    #peak torque to over rev transition
+    @constraint(rhocp, first_gear[i]  -->  {u[i] <= 500 - 0.5458 * (v[i] * R_d * R_gb[1] / r - 471.2389)})
+    @constraint(rhocp, second_gear[i] -->  {u[i] <= 500 - 0.5458 * (v[i] * R_d * R_gb[2] / r - 471.2389)})
+    @constraint(rhocp, third_gear[i]  -->  {u[i] <= 500 - 0.5458 * (v[i] * R_d * R_gb[3] / r - 471.2389)})
+    @constraint(rhocp, fourth_gear[i] -->  {u[i] <= 500 - 0.5458 * (v[i] * R_d * R_gb[4] / r - 471.2389)})
+    @constraint(rhocp, fifth_gear[i]  -->  {u[i] <= 500 - 0.5458 * (v[i] * R_d * R_gb[5] / r - 471.2389)})
+
+    #over rev
+    @constraint(rhocp, first_gear[i]  -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[1] / r - 617.7605))/500})
+    @constraint(rhocp, second_gear[i] -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[2] / r - 617.7605))/500})
+    @constraint(rhocp, third_gear[i]  -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[3] / r - 617.7605))/500})
+    @constraint(rhocp, fourth_gear[i] -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[4] / r - 617.7605))/500})
+    @constraint(rhocp, fifth_gear[i]  -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[5] / r - 617.7605))/500})
+    
+    # Update cumulative distance: distance[i+1] = distance[i] + v[i] * time_step
+    @constraint(rhocp, distance[i+1] == distance[i] + v[i] * time_step)
+    
+    # If distance exceeds curve_start_distance, enforce max velocity of 20
+    # Force curve[i] = 1 when distance >= curve_start_distance
+    @constraint(rhocp, !curve[i] --> {distance[i] <= curve_start_distance - 0.01})
+    @constraint(rhocp, curve[i] --> {v[i+1] <= 20})
+    
+    @constraint(rhocp, v[i+1] == v[i] + a[i]  )
+end
+
+# Objective: maximize velocity
+@objective(rhocp, Max, sum(v))
+
+
+optimize!(rhocp)
+
+# Extract results
+velocity = value.(v)
+distance_vals = value.(distance)
+time_pts = 0:time_step:(N*time_step)
+time_steps = time_step:time_step:(N*time_step)
+
+# Extract gear selections
+gear_1 = value.(first_gear)
+gear_2 = value.(second_gear)
+gear_3 = value.(third_gear)
+gear_4 = value.(fourth_gear)
+gear_5 = value.(fifth_gear)
+u_vals = value.(u)
+
+# Determine active gear at each time step
+active_gear = zeros(Int, N)
+for i in 1:N
+    if gear_1[i] > 0.5
+        active_gear[i] = 1
+    elseif gear_2[i] > 0.5
+        active_gear[i] = 2
+    elseif gear_3[i] > 0.5
+        active_gear[i] = 3
+    elseif gear_4[i] > 0.5
+         active_gear[i] = 4
+    elseif gear_5[i] > 0.5
+         active_gear[i] = 5
+    else
+         active_gear[i] = 0  # Neutral gear
+    end
+end
+
+# Calculate motor RPM for each time step
+r_m = car.rear_wheel_radius
+motor_rpm = zeros(N)
+for i in 1:N
+    gear_idx = active_gear[i]
+    if gear_idx > 0
+        # Motor RPM = (v / r) * differential_ratio * gearbox_ratio * (60 / 2π)
+        motor_rpm[i] = (velocity[i] / r_m) * R_d * R_gb[gear_idx] * (60 / (2 * π))
+    else
+        motor_rpm[i] = 0  # Neutral gear, no RPM
+    end
+end
+
+# Plot
+using Plots
+p1 = plot(time_pts, velocity, 
+     xlabel="Time (s)", 
+     ylabel="Velocity (m/s)",
+     title="Car Velocity vs Time",
+     linewidth=2,
+     marker=:circle,
+     legend=false)
+
+p2 = plot(time_steps, active_gear,
+     xlabel="Time (s)",
+     ylabel="Gear",
+     title="Gear Selection vs Time",
+     linewidth=2,
+     marker=:square,
+     legend=false,
+     yticks=0:5)
+
+p3 = plot(time_steps, u_vals,
+     xlabel="Time (s)",
+     ylabel="Control Input u (Nm)",
+     title="Control Input vs Time",
+     linewidth=2,
+     marker=:circle,
+     legend=false)
+
+p4 = plot(time_steps, motor_rpm,
+     xlabel="Time (s)",
+     ylabel="Motor RPM",
+     title="Motor RPM vs Time",
+     linewidth=2,
+     marker=:circle,
+     legend=false)
+
+p5 = scatter(motor_rpm, u_vals,
+     xlabel="Motor RPM",
+     ylabel="Torque (Nm)",
+     title="Torque vs RPM",
+     marker=:circle,
+     legend=false,
+     markersize=4)
+
+p6 = plot(time_pts, distance_vals,
+     xlabel="Time (s)",
+     ylabel="Distance (m)",
+     title="Distance vs Time",
+     linewidth=2,
+     marker=:circle,
+     legend=false)
+
+
+plot(p1, p2, p3, p4, p5, p6, layout=(6,1), size=(800, 1800))
