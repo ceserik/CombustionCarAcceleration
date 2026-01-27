@@ -6,7 +6,7 @@ include("carParams.jl")
 
 
 time_step = 0.05
-N = 80
+N = 160
 
 
 rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
