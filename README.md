@@ -17,10 +17,10 @@ $$u\leq T_{m}(\omega,R_{gb})$$
 where $u$ is motor torque, $R_{gb}$ is gear ratio of gearbox, $R_{df}$ is ratio of differential, $m$ is mass of the car and $r_w$ is radius of driven wheels. To model discrete gear ratios of gearbox, the model is switched between five different affine systems, that differ in $R_{gb}$ and motor map. This is done by using five indicator varibles $\delta_1,\delta_2,\delta_3,\delta_4,\delta_5$ which can be either ${0,1}$. Each indicator variable is size $1 \times N$, which gives $5\times N$  indicator variables.
 
 Then xor is enforced between them, to force only one gear ratio to be active:
-$$
+<!-- $$
 \delta_1 \oplus \delta_2 \oplus \delta_3 \oplus \delta_4 \oplus \delta_5 ,
 $$
-by constraint
+by constraint -->
 $$\delta_1 + \delta_2 + \delta_3 + \delta_4 + \delta_5 = 1$$
 
 ## Motor model
