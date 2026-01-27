@@ -5,8 +5,8 @@ import ParametricOptInterface as POI
 include("carParams.jl")
 
 max_accel = 20 #m/s^2
-time_step = 0.1
-N = 50
+time_step = 0.05
+N = 100
 curve_start_distance = 70
 curve_end_distance = 75  # Curve ends 10 meters after it starts
 
@@ -193,4 +193,5 @@ p6 = plot(time_pts, distance_vals,
      legend=false)
 
 
-plot(p1, p2, p3, p4, p5, p6, layout=(6,1), size=(800, 1800))
+p =plot(p1, p2, p3, p4, p5, p6, layout=(6,1), size=(800, 1800))
+savefig(p,"car_acceleration_results.png")

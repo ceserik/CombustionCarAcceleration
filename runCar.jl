@@ -5,7 +5,7 @@ import ParametricOptInterface as POI
 include("carParams.jl")
 
 
-time_step = 0.1
+time_step = 0.05
 N = 80
 
 
@@ -153,4 +153,6 @@ p5 = scatter(motor_rpm, u_vals,
      markersize=4)
 
 
-plot(p1, p2, p3, p4, p5, layout=(5,1), size=(800, 1500))
+p_final = plot(p1, p2, p3, p4, p5, layout=(5,1), size=(800, 1500))
+
+savefig(p_final, "car_simple.png")
