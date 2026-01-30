@@ -6,18 +6,18 @@ include("carParams.jl")
 
 
 time_step = 0.05
-N = 160
+N = 160 #takes couple minutes to compute
 
 
 rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
-
-@variable(rhocp, first_gear[1:N], Bin)                       # [first_gear(k), first_gear(k+1), ..., first_gear(k+N-1)]
+# indicator variables that signal which gear is active
+@variable(rhocp, first_gear[1:N], Bin)                       
 @variable(rhocp, second_gear[1:N], Bin)
 @variable(rhocp, third_gear[1:N], Bin)
 @variable(rhocp, fourth_gear[1:N], Bin)
 @variable(rhocp, fifth_gear[1:N], Bin)
 
-@variable(rhocp, 0 <= v[1:N+1] <= 60)  # velocity in m/s, bounded [0, 100] 
+@variable(rhocp, 0 <= v[1:N+1] <= 60)  # velocity in m/s, bounded [0, 60] 
 @variable(rhocp, 0 <= z[1:N] <= 3)   
 @variable(rhocp, v_cur in MOI.Parameter(0))  
 @variable(rhocp,-2 <= u[1:N] <= 500)
@@ -32,10 +32,11 @@ R_gb = car.gearbox_ratios
 for i in 1:N                                        # i corresponds to time step k+i-1
     # XOR to force exactly one gear ratio to be active at all times
     @constraint(rhocp, first_gear[i] + second_gear[i] + third_gear[i] + fourth_gear[i] + fifth_gear[i] == 1)
-    #@constraint(rhocp, ==0)
+    
     
     #traction force from motor to wheels
     @constraint(rhocp, first_gear[i]  -->  {z[i] == (u[i] * R_gb[1] *R_d)/(m * r) * time_step})
+    # @constraint(rhocp, !first_gear[i]  -->  {1 == second_gear[i] + third_gear[i] + fourth_gear[i] + fifth_gear[i]})
     @constraint(rhocp, second_gear[i] -->  {z[i] == (u[i] * R_gb[2] *R_d)/(m * r) * time_step})
     @constraint(rhocp, third_gear[i]  -->  {z[i] == (u[i] * R_gb[3] *R_d)/(m * r) * time_step})
     @constraint(rhocp, fourth_gear[i] -->  {z[i] == (u[i] * R_gb[4] *R_d)/(m * r) * time_step})

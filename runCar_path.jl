@@ -6,24 +6,28 @@ include("carParams.jl")
 
 max_accel = 20 #m/s^2
 time_step = 0.05
-N = 100
+N = 100 #takes couple minutes to compute
+
 curve_start_distance = 70
 curve_end_distance = 75  # Curve ends 10 meters after it starts
 
 
 rhocp = Model(() -> POI.Optimizer(HiGHS.Optimizer()))
+# indicator variables that signal which gear is active
 @variable(rhocp, neutral_gear[1:N], Bin)                       
 @variable(rhocp, first_gear[1:N], Bin)                       
 @variable(rhocp, second_gear[1:N], Bin)
 @variable(rhocp, third_gear[1:N], Bin)
 @variable(rhocp, fourth_gear[1:N], Bin)
 @variable(rhocp, fifth_gear[1:N], Bin)
+
+# indicator variables that signal which track segment is active
 @variable(rhocp, before_curve[1:N], Bin)
 @variable(rhocp, in_curve[1:N], Bin)
 @variable(rhocp, after_curve[1:N], Bin)
 
 
-@variable(rhocp, 0 <= v[1:N+1] <= 60)  # velocity in m/s, bounded [0, 100] 
+@variable(rhocp, 0 <= v[1:N+1] <= 60)  # velocity in m/s, bounded [0, 60] 
 @variable(rhocp, 0 <= distance[1:N+1] <= 150)  # cumulative distance in m
 @variable(rhocp, -max_accel * time_step <= a[1:N] <= max_accel * time_step)   
 @variable(rhocp, v_cur in MOI.Parameter(0))  
@@ -41,9 +45,8 @@ motor_drag = 20;
 for i in 1:N                                        # i corresponds to time step k+i-1
     # XOR to force exactly one gear ratio to be active at all times
     @constraint(rhocp, first_gear[i] + second_gear[i] + third_gear[i] + fourth_gear[i] + fifth_gear[i] + neutral_gear[i] == 1)
-    #@constraint(rhocp, ==0)
     
-    #traction force from motor to wheels
+    #traction force from motor to wheels + neutral gear
     @constraint(rhocp, neutral_gear[i]  -->  {u[i] == 0})
     @constraint(rhocp, neutral_gear[i]  -->  {a[i] <= 0})
     @constraint(rhocp, first_gear[i]  -->  {a[i] == ((u[i] ) * R_gb[1] *R_d)/(m * r) * time_step})
@@ -74,12 +77,12 @@ for i in 1:N                                        # i corresponds to time step
     @constraint(rhocp, fourth_gear[i] -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[4] / r - 617.7605))/500})
     @constraint(rhocp, fifth_gear[i]  -->  {u[i]/500 <= (420 - 26.7324 * (v[i] * R_d * R_gb[5] / r - 617.7605))/500})
     
+    # Euler method for speed and distance
+    @constraint(rhocp, v[i+1] == v[i] + a[i]  )
     @constraint(rhocp, distance[i+1] == distance[i] + v[i] * time_step)
     
-
+    #constraints for track segments
     @constraint(rhocp, before_curve[i] + in_curve[i] + after_curve[i] == 1)
-    
-
     @constraint(rhocp, before_curve[i] --> {distance[i] <= curve_start_distance})
     @constraint(rhocp, in_curve[i] --> {distance[i] >= curve_start_distance})
     @constraint(rhocp, in_curve[i] --> {distance[i] <= curve_end_distance})
@@ -87,7 +90,7 @@ for i in 1:N                                        # i corresponds to time step
     
     @constraint(rhocp, in_curve[i] --> {v[i+1] <= 10})
     
-    @constraint(rhocp, v[i+1] == v[i] + a[i]  )
+    
 end
 
 # Objective: maximize velocity
